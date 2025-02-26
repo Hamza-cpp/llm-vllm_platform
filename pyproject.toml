@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiosqlite>=0.21.0",
     "fastapi>=0.115.8",
     "gradio>=5.16.2",
+    "gunicorn>=23.0.0",
     "pydantic>=2.10.6",
     "requests>=2.32.3",
 ]
