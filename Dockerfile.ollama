@@ -1,0 +1,23 @@
+FROM ollama/ollama:latest
+
+WORKDIR /root/.ollama
+
+# Copy the startup script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 11434
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+# docker network create chatbot_network
+
+# docker build -t ollama_service -f Dockerfile.ollama .
+# docker run \
+#   --name ollama_service \
+#   --network chatbot_network \
+#   -p 11434:11434 \
+#   -v ollama_data:/root/.ollama \
+#   -v $(pwd)/models.txt:/models/models.txt \
+#   ollama_service

@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY pyproject.toml /app/
+
+RUN pip install poetry
+RUN poetry config virtualenvs.create false
+RUN poetry install --no-root
+
+COPY . /app
+
+RUN mkdir -p /db && chmod 777 /db
+
+EXPOSE 8000
+
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--workers", "4", "api:app"]
+
+
+# docker build -t chatbot_backend -f Dockerfile.fastapi .
+# docker run \
+#   --name chatbot_backend \
+#   --network chatbot_network \
+#   -p 8000:8000 \
+#   --env OLLAMA_API_URL=http://ollama_service:11434/api/generate \
+#   --env DB_PATH=/db/llm_responses.db \
+#   -v $(pwd):/app \
+#   -v $(pwd)/db:/db \
+#   chatbot_backend
