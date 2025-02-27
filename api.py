@@ -1,17 +1,32 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-import aiosqlite  # Async SQLite
-import logging
-import os
-import requests
 from typing import Optional
+import subprocess
+import aiosqlite  # Async SQLite
+import tempfile
+import requests
+import logging
+import shutil
+import os
 
 
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://ollama_service:11434/api/generate")
 DB_PATH = os.getenv("DB_PATH", "./db/llm_responses.db")
+LLAMA_CPP_PATH = os.getenv(
+    "LLAMA_CPP_PATH", "/home/hamza_ok/llama.cpp/build/bin/llama-qwen2vl-cli"
+)
+QWEN2VL_MODEL_PATH = os.getenv(
+    "QWEN2VL_MODEL_PATH",
+    "/home/hamza_ok/llama.cpp/model/Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+)
+MM_PROJ_PATH = os.getenv(
+    "MM_PROJ_PATH",
+    "/home/hamza_ok/llama.cpp/model/mmproj-Qwen2-VL-2B-Instruct-f16.gguf",
+)
+SUPPORTED_IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
 
+app = FastAPI(title="Text & Vision API", version="1.1")
 
-app = FastAPI(title="Ollama Chatbot API", version="1.0")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +36,8 @@ logger = logging.getLogger(__name__)
 async def init_db():
     """Initialize the SQLite database if it doesn't exist."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+        await db.execute(
+            """
             CREATE TABLE IF NOT EXISTS responses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 context TEXT,
@@ -30,7 +46,8 @@ async def init_db():
                 rating INTEGER DEFAULT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         await db.commit()
 
 
@@ -94,6 +111,54 @@ async def generate_response(request: GenerateRequest):
     raise HTTPException(
         status_code=response.status_code, detail="Failed to generate response"
     )
+
+
+@app.post("/api/generate-vision", tags=["Chatbot"])
+async def generate_vision_response(
+    user_question: str = Form(...), image: UploadFile = File(...)
+):
+    """Generate a response using Llama.cpp with Qwen2-VL (Vision Model)."""
+    # Get the file extension
+    ext = os.path.splitext(image.filename)[-1].lower()
+
+    # Validate image format
+    if ext not in SUPPORTED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image format: {ext}. Supported formats: {', '.join(SUPPORTED_IMAGE_TYPES)}",
+        )
+    # Create a temp file with the correct extension
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_image:
+        shutil.copyfileobj(image.file, temp_image)
+        image_path = temp_image.name
+
+    logger.info(
+        f"Processing vision request with question: {user_question} and image: {image.filename}"
+    )
+
+    result = subprocess.run(
+        [
+            LLAMA_CPP_PATH,
+            "-m",
+            QWEN2VL_MODEL_PATH,
+            "--mmproj",
+            MM_PROJ_PATH,
+            "-p",
+            user_question,
+            "--image",
+            image_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    os.remove(image_path)  # Cleanup
+
+    if result.returncode == 0:
+        return {"response": result.stdout.strip()}
+    else:
+        logger.error(f"Llama.cpp error: {result.stderr}")
+        raise HTTPException(status_code=500, detail="Failed to generate response")
 
 
 @app.post("/api/save_rating", tags=["Chatbot"])
