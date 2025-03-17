@@ -1,0 +1,47 @@
+services:
+  ollama_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./models.txt:/models/models.txt
+    networks:
+      - chatbot_network
+    ports:
+      - "11434:11434"
+
+  llama_cpp_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.llama_cpp
+    volumes:
+      - ./models:/app/models
+    networks:
+      - chatbot_network
+    ports:
+      - "8080:8080"
+
+  chatbot_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    volumes:
+      - .:/app
+    networks:
+      - chatbot_network
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_API_URL=http://ollama_service:11434/api/generate
+      - LLAMACPP_API_URL=http://llama_cpp_service:8080/generate-vision
+    depends_on:
+      - ollama_service
+      - llama_cpp_service
+
+networks:
+  chatbot_network:
+    external: true
+
+volumes:
+  ollama_data:

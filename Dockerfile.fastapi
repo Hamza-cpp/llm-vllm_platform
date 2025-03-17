@@ -2,15 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY pyproject.toml /app/
+COPY requirements.txt /app/
 
-RUN pip install poetry
-RUN poetry config virtualenvs.create false
-RUN poetry install --no-root
+RUN pip3 install -r requirements.txt
 
 COPY . /app
-
-RUN mkdir -p /db && chmod 777 /db
 
 EXPOSE 8000
 
@@ -18,12 +14,12 @@ CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "-
 
 
 # docker build -t chatbot_backend -f Dockerfile.fastapi .
+
 # docker run \
 #   --name chatbot_backend \
+#   -v $(pwd):/app \
 #   --network chatbot_network \
 #   -p 8000:8000 \
-#   --env OLLAMA_API_URL=http://ollama_service:11434/api/generate \
-#   --env DB_PATH=/db/llm_responses.db \
-#   -v $(pwd):/app \
-#   -v $(pwd)/db:/db \
+#   -e OLLAMA_API_URL=http://ollama_service:11434/api/generate \
+#   -e LLAMACPP_API_URL=http://llama_cpp_service:8080/generate-vision \
 #   chatbot_backend
