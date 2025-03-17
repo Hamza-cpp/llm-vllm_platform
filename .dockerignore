@@ -7,4 +7,11 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+test_venv/
+models/
+
+
+# uv project manager
+uv.lock
+pyproject.toml  
