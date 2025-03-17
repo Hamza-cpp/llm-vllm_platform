@@ -1,29 +1,18 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
-import subprocess
 import aiosqlite  # Async SQLite
-import tempfile
 import requests
 import logging
-import shutil
+import aiohttp
 import os
 
-
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://ollama_service:11434/api/generate")
+LLAMACPP_API_URL = os.getenv(
+    "LLAMACPP_API_URL", "http://llama_cpp_service:8080/generate-vision"
+)
 DB_PATH = os.getenv("DB_PATH", "./db/llm_responses.db")
-LLAMA_CPP_PATH = os.getenv(
-    "LLAMA_CPP_PATH", "/home/hamza_ok/llama.cpp/build/bin/llama-qwen2vl-cli"
-)
-QWEN2VL_MODEL_PATH = os.getenv(
-    "QWEN2VL_MODEL_PATH",
-    "/home/hamza_ok/llama.cpp/model/Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
-)
-MM_PROJ_PATH = os.getenv(
-    "MM_PROJ_PATH",
-    "/home/hamza_ok/llama.cpp/model/mmproj-Qwen2-VL-2B-Instruct-f16.gguf",
-)
-SUPPORTED_IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
+SUPPORTED_IMAGE_TYPES = {".jpg", ".jpeg", ".png"}
 
 app = FastAPI(title="Text & Vision API", version="1.1")
 
@@ -117,48 +106,59 @@ async def generate_response(request: GenerateRequest):
 async def generate_vision_response(
     user_question: str = Form(...), image: UploadFile = File(...)
 ):
-    """Generate a response using Llama.cpp with Qwen2-VL (Vision Model)."""
-    # Get the file extension
-    ext = os.path.splitext(image.filename)[-1].lower()
-
-    # Validate image format
-    if ext not in SUPPORTED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported image format: {ext}. Supported formats: {', '.join(SUPPORTED_IMAGE_TYPES)}",
-        )
-    # Create a temp file with the correct extension
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_image:
-        shutil.copyfileobj(image.file, temp_image)
-        image_path = temp_image.name
+    """Generate a response using the Llama.cpp Vision API service."""
 
     logger.info(
-        f"Processing vision request with question: {user_question} and image: {image.filename}"
+        f"Sending vision request to llama.cpp service for question: {user_question}"
     )
 
-    result = subprocess.run(
-        [
-            LLAMA_CPP_PATH,
-            "-m",
-            QWEN2VL_MODEL_PATH,
-            "--mmproj",
-            MM_PROJ_PATH,
-            "-p",
-            user_question,
-            "--image",
-            image_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        # Create a new aiohttp session
+        async with aiohttp.ClientSession() as session:
+            # Prepare the form data with the image and question
+            form_data = aiohttp.FormData()
+            form_data.add_field("user_question", user_question)
 
-    os.remove(image_path)  # Cleanup
+            # Read the image file contents
+            image_content = await image.read()
+            form_data.add_field(
+                "image",
+                image_content,
+                filename=image.filename,
+                content_type=image.content_type,
+            )
 
-    if result.returncode == 0:
-        return {"response": result.stdout.strip()}
-    else:
-        logger.error(f"Llama.cpp error: {result.stderr}")
-        raise HTTPException(status_code=500, detail="Failed to generate response")
+            # Send the request to the llama.cpp API service
+            async with session.post(LLAMACPP_API_URL, data=form_data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    answer = result.get("response", "")
+
+                    # Save response to database
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute(
+                            """
+                            INSERT INTO responses (context, question, answer)
+                            VALUES (?, ?, ?)
+                            """,
+                            ("Image input", user_question, answer),
+                        )
+                        await db.commit()
+
+                    return {"response": answer}
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to get response from llama.cpp service: {error_text}"
+                    )
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail=f"Failed to generate response: {error_text}",
+                    )
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to llama.cpp service: {str(e)}")
+        raise HTTPException(status_code=503, detail="llama.cpp service unavailable")
 
 
 @app.post("/api/save_rating", tags=["Chatbot"])
