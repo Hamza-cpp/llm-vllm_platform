@@ -1,0 +1,22 @@
+FROM ollama/ollama:latest
+
+# a script to pull the Qwen model on startup
+COPY --chmod=755 <<'EOF' /start.sh
+#!/bin/sh
+ollama pull qwen2:1.5b
+echo "Qwen2-1.5B model downloaded successfully"
+exec ollama serve
+EOF
+
+ENTRYPOINT ["/start.sh"]
+
+EXPOSE 11434
+
+# docker build -t ollama-qwen-gpu -f Dockerfile.qwen_gpu .             
+
+# docker run \
+#     --gpus=all \
+#     -v ollama:/root/.ollama \
+#     -p 11434:11434 \
+#     --name ollama-qwen-gpu \
+#     ollama-qwen-gpu
