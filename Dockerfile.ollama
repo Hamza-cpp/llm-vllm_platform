@@ -21,3 +21,36 @@ ENTRYPOINT ["/entrypoint.sh"]
 #   -v ollama_data:/root/.ollama \
 #   -v $(pwd)/models.txt:/models/models.txt \
 #   ollama_service
+
+
+
+# docker run \
+#     --gpus=0 \
+#     -v ollama:/root/.ollama \
+#     -p 11434:11434 \
+#     --name ollama_service-gpu \
+#     ollama_service
+
+
+# docker run \
+#     -v ollama:/root/.ollama \ 
+#     -p 11434:11434 \
+#     --name ollama_service-cpu \
+#     ollama_service
+
+
+# curl http://localhost:11434/api/generate -d '{
+#   "model": "qwen2.5:1.5b",
+#   "prompt": "Why is the sky blue?",
+#   "stream": false
+# }'
+
+# curl http://localhost:11434/api/generate -d '{
+#   "model": "qwen2.5:1.5b",
+#   "keep_alive": 0
+# }'
+
+# curl http://localhost:11434/api/generate -d '{
+#   "model": "qwen2.5:1.5b"
+# }'
+
